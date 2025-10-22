@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RGB Color Picker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .color-display {
+            width: 200px;
+            height: 200px;
+            border: 1px solid #ccc;
+            margin: 20px auto;
+            border-radius: 4px;
+        }
+        input[type="range"] {
+            margin: 10px;
+        }
+        .rgb-value {
+            font-size: 1.2rem;
+            margin: 10px;
+        }
+        button {
+            margin-top: 10px;
+            padding: 8px 16px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RGB Color Picker</h1>
+        <div class="color-display" id="colorDisplay"></div>
+        <div>
+            <label for="red">Red:</label>
+            <input type="range" id="red" min="0" max="255" value="0">
+            <span id="redValue">0</span>
+        </div>
+        <div>
+            <label for="green">Green:</label>
+            <input type="range" id="green" min="0" max="255" value="0">
+            <span id="greenValue">0</span>
+        </div>
+        <div>
+            <label for="blue">Blue:</label>
+            <input type="range" id="blue" min="0" max="255" value="0">
+            <span id="blueValue">0</span>
+        </div>
+        <div class="rgb-value">
+            RGB: <span id="rgbValue">rgb(0, 0, 0)</span>
+        </div>
+        <button id="downloadBtn">Download RGB Value</button>
+    </div>
+
+    <script>
+        const redSlider = document.getElementById('red');
+        const greenSlider = document.getElementById('green');
+        const blueSlider = document.getElementById('blue');
+        const colorDisplay = document.getElementById('colorDisplay');
+        const redValue = document.getElementById('redValue');
+        const greenValue = document.getElementById('greenValue');
+        const blueValue = document.getElementById('blueValue');
+        const rgbValue = document.getElementById('rgbValue');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        function updateColor() {
+            const red = redSlider.value;
+            const green = greenSlider.value;
+            const blue = blueSlider.value;
+
+            redValue.textContent = red;
+            greenValue.textContent = green;
+            blueValue.textContent = blue;
+
+            const rgb = `rgb(${red}, ${green}, ${blue})`;
+            rgbValue.textContent = rgb;
+            colorDisplay.style.backgroundColor = rgb;
+        }
+
+        redSlider.addEventListener('input', updateColor);
+        greenSlider.addEventListener('input', updateColor);
+        blueSlider.addEventListener('input', updateColor);
+
+        // Download RGB value as a text file
+        downloadBtn.addEventListener('click', function() {
+            const rgb = rgbValue.textContent;
+            const blob = new Blob([rgb], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'rgb_value.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Initialize
+        updateColor();
+    </script>
+</body>
+</html>
