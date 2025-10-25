@@ -21,7 +21,7 @@
             width: 100%;
             height: 150px;
             cursor: pointer;
-            border-radius: 1.5rem; 
+            border-radius: 1.5rem;
             padding: 0;
             overflow: hidden;
         }
@@ -29,13 +29,29 @@
         #colorPicker::-webkit-color-swatch { border: none; border-radius: 1.5rem; }
         #colorPicker::-moz-color-swatch-wrapper { padding: 0; }
         #colorPicker::-moz-color-swatch { border: none; border-radius: 1.5rem; }
+
+        /* Custom style for the SELECTED effect button */
+        .effect-button.selected {
+            background-color: #10B981 !important; /* Tailwind green-500 */
+            color: white !important;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3), 0 2px 4px -2px rgba(16, 185, 129, 0.3);
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
 
     <div class="w-full max-w-md bg-white p-6 md:p-8 rounded-2xl shadow-xl space-y-6">
         <h1 class="text-3xl font-bold text-center text-gray-800">Kleurkiezer voor Kerst</h1>
-        <p class="text-center text-gray-500 mb-2">Selecteer een kleur of een speciaal effect.</p>
+        <p class="text-center text-gray-500 mb-2">Selecteer een kleur en een effect om te verzenden.</p>
+
+        <div id="activeStateDisplay" class="text-center text-sm p-3 rounded-xl font-medium bg-indigo-100 text-indigo-700 transition-all duration-500">
+            Momenteel Actief: <strong>Wachten op data...</strong>
+        </div>
+
+        <div id="selectedEffectDisplay" class="text-center text-sm p-3 rounded-xl font-medium bg-blue-50 text-blue-700">
+            Gekozen Effect: <strong>Static (9)</strong>
+        </div>
 
         <div class="flex flex-col items-center space-y-4">
             <label for="colorPicker" class="text-lg font-medium text-gray-700">Gekozen Kleur:</label>
@@ -43,9 +59,9 @@
         </div>
 
         <div class="space-y-3 pt-2">
-            <label class="text-lg font-medium text-gray-700 text-center block">Speciale Effecten:</label>
+            <label class="text-lg font-medium text-gray-700 text-center block">Speciale Effecten (direct verzenden):</label>
             <div id="effectButtonsContainer" class="grid grid-cols-5 gap-2 md:gap-3">
-                </div>
+            </div>
         </div>
 
         <div id="statusBox" class="text-center text-sm p-3 rounded-xl font-medium transition-all duration-300 bg-yellow-100 text-yellow-700">
@@ -55,7 +71,7 @@
         <button id="publishButton" disabled
                 class="w-full py-4 text-lg font-semibold rounded-xl transition duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed
                        bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50">
-            Kleur aanpassen!
+            Verzend Geselecteerd Effect & Kleur!
         </button>
 
         <p class="text-xs text-center text-gray-400 pt-2">
@@ -77,8 +93,13 @@
         
         let client;
         
-        // ***** NEW: CONFIGURATION FOR EFFECT BUTTONS *****
-        // Array of 10 button labels. Payloads will be "1", "2", "3", etc.
+        // Global object to track the selected effect's number and name
+        let selectedEffect = {
+            name: "Static", 
+            number: 9
+        }; 
+
+        // Array mapping effect numbers back to names
         const effectButtonLabels = [
             "Sparkle", "Fade", "Chase", "Blink", "Wave",
             "Cycle", "Strobe", "Twinkle", "Static", "Rainbow"
@@ -88,62 +109,65 @@
         const statusBox = document.getElementById('statusBox');
         const publishButton = document.getElementById('publishButton');
         const colorPicker = document.getElementById('colorPicker');
-        const effectButtonsContainer = document.getElementById('effectButtonsContainer'); // NEW
+        const effectButtonsContainer = document.getElementById('effectButtonsContainer');
+        const selectedEffectDisplay = document.getElementById('selectedEffectDisplay');
+        const activeStateDisplay = document.getElementById('activeStateDisplay'); // NEW
+
+        // --- UI & Utility Functions ---
 
         /**
          * Updates the status message displayed to the user.
-         * @param {string} message - The message to display.
-         * @param {string} type - The type of message ('info', 'success', 'error').
          */
         function updateStatus(message, type = 'info') {
             statusBox.textContent = message;
             statusBox.classList.remove('bg-yellow-100', 'text-yellow-700', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700');
 
-            // Get all the new effect buttons
             const allEffectButtons = document.querySelectorAll('.effect-button');
 
             switch (type) {
                 case 'success':
                     statusBox.classList.add('bg-green-100', 'text-green-700');
                     publishButton.disabled = false;
-                    allEffectButtons.forEach(btn => btn.disabled = false); // Enable
+                    allEffectButtons.forEach(btn => btn.disabled = false); 
                     break;
                 case 'error':
                     statusBox.classList.add('bg-red-100', 'text-red-700');
                     publishButton.disabled = true;
-                    allEffectButtons.forEach(btn => btn.disabled = true); // Disable
+                    allEffectButtons.forEach(btn => btn.disabled = true); 
                     break;
                 case 'info':
                 default:
                     statusBox.classList.add('bg-yellow-100', 'text-yellow-700');
                     publishButton.disabled = true;
-                    allEffectButtons.forEach(btn => btn.disabled = true); // Disable
+                    allEffectButtons.forEach(btn => btn.disabled = true); 
                     break;
             }
         }
         
         /**
-         * ***** NEW: Creates the effect buttons dynamically *****
+         * Creates the effect buttons dynamically.
          */
         function createEffectButtons() {
             effectButtonLabels.forEach((label, index) => {
-                const payload = (index + 1).toString(); // Payloads 1-10
+                const effectNumber = index + 1;
                 
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.textContent = label;
-                button.dataset.payload = payload; // Store payload
+                button.textContent = `${label} (${effectNumber})`;
+                button.dataset.effectName = label;
+                button.dataset.effectNumber = effectNumber;
                 
-                // Add classes for styling and selection
+                let initialClass = (effectNumber === selectedEffect.number) ? ' selected' : '';
+
                 button.className = `effect-button py-2 px-1 text-xs md:text-sm font-medium rounded-lg transition-all 
                                      bg-gray-100 text-gray-700 hover:bg-gray-200 
-                                     disabled:opacity-50 disabled:cursor-not-allowed`;
+                                     disabled:opacity-50 disabled:cursor-not-allowed` + initialClass;
                 
-                button.disabled = true; // Disabled by default
+                button.disabled = true;
                 
-                // Add click listener
                 button.addEventListener('click', () => {
-                    publishEffect(payload, label);
+                    selectEffect(label, effectNumber);
+                    publishCombinedMessage(effectNumber);
                 });
                 
                 effectButtonsContainer.appendChild(button);
@@ -151,12 +175,34 @@
         }
 
         /**
-         * Connects the Paho MQTT client to the broker.
+         * Selects an effect and updates the UI for the *chosen* effect.
          */
+        function selectEffect(name, number) {
+            // 1. Update global object
+            selectedEffect.name = name;
+            selectedEffect.number = number;
+
+            // 2. Update display
+            selectedEffectDisplay.innerHTML = `Gekozen Effect: <strong>${name} (${number})</strong>`;
+
+            // 3. Update button styles
+            const allEffectButtons = document.querySelectorAll('.effect-button');
+            allEffectButtons.forEach(btn => {
+                btn.classList.remove('selected');
+                if (parseInt(btn.dataset.effectNumber) === number) {
+                    btn.classList.add('selected');
+                }
+            });
+        }
+        
+        // --- MQTT Functions ---
+        
         function mqttConnect() {
             try {
+                // Ensure message handler is set before connect
                 client = new Paho.MQTT.Client(host, port, path, clientId);
                 client.onConnectionLost = onConnectionLost;
+                client.onMessageArrived = onMessageArrived; // ADDED MESSAGE HANDLER
                 
                 updateStatus("Verbinden met lampjes...");
                 client.connect({
@@ -171,26 +217,23 @@
             }
         }
 
-        /**
-         * Called when the connection is established.
-         */
         function onConnect() {
             console.log("MQTT Connected");
-            updateStatus("Verbinding gelukt! Klaar om te publiceren.", 'success');
+            updateStatus("Verbinding gelukt! Klaar om te publiceren. Abonneren op topic...", 'success');
+            
+            // ***** CRITICAL: Subscribe to the topic when connected *****
+            client.subscribe(topic, { qos: 0 });
+            console.log(`Subscribed to topic: ${topic}`);
+            
+            selectEffect(selectedEffect.name, selectedEffect.number);
         }
 
-        /**
-         * Called when the connection fails.
-         */
         function onFailure(responseObject) {
             console.error("MQTT Connection Failed:", responseObject);
             updateStatus(`Verbindingsfout: ${responseObject.errorMessage}. Opnieuw proberen in 5s.`, 'error');
             setTimeout(mqttConnect, 5000); 
         }
 
-        /**
-         * Called when the connection is lost.
-         */
         function onConnectionLost(responseObject) {
             if (responseObject.errorCode !== 0) {
                 console.error("MQTT Connection Lost:", responseObject.errorMessage);
@@ -200,60 +243,63 @@
         }
 
         /**
-         * Publishes the current color hex value to the MQTT topic.
+         * ***** NEW: Handles incoming MQTT messages and updates the active display *****
          */
-        function publishColor() {
+        function onMessageArrived(message) {
+            const payload = message.payloadString;
+            console.log(`Message received on ${message.destinationName}: ${payload}`);
+
+            // Check if the payload is in the expected format (Number,#HexColor)
+            if (payload && payload.includes(',')) {
+                const parts = payload.split(',');
+                const effectNum = parseInt(parts[0].trim());
+                const hexColor = parts[1].trim();
+                
+                // Get the effect name from the array (index is number - 1)
+                const effectName = effectButtonLabels[effectNum - 1] || "Onbekend";
+
+                // Update the active state display box
+                activeStateDisplay.innerHTML = `
+                    Momenteel Actief: 
+                    <strong style="color: ${hexColor};">
+                        ${effectName} (${effectNum})
+                    </strong>
+                    met kleur 
+                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${hexColor}; border: 1px solid #ccc;"></span>
+                    ${hexColor}
+                `;
+            } else {
+                console.warn("Received message not in 'Number,#RRGGBB' format:", payload);
+                activeStateDisplay.innerHTML = 'Momenteel Actief: <strong>Ongeldige data ontvangen</strong>';
+            }
+        }
+        
+        /**
+         * Publishes the combined 'EffectNumber,#RRGGBB' message.
+         */
+        function publishCombinedMessage(effectNumberToPublish = selectedEffect.number) {
             if (!client || !client.isConnected()) {
                 updateStatus("Niet verbonden. Opnieuw verbinding maken...", 'error');
-                mqttConnect(); // Try to reconnect
+                mqttConnect();
                 return;
             }
 
-            const hexValue = colorPicker.value; 
-            const message = new Paho.MQTT.Message(hexValue);
+            const hexValue = colorPicker.value.toUpperCase(); 
+            // Create the combined payload: "EffectNumber,#RRGGBB"
+            const payload = `${effectNumberToPublish},${hexValue}`;
+
+            const message = new Paho.MQTT.Message(payload);
             message.destinationName = topic;
             message.qos = 0;
             message.retained = false; 
 
             try {
                 client.send(message);
-                updateStatus(`Kleur (${hexValue}) succesvol verzonden!`, 'success');
-                console.log(`Published to ${topic}: ${hexValue}`);
-
-                setTimeout(() => {
-                    if (statusBox.textContent.includes("succesvol verzonden")) {
-                        updateStatus("Verbinding gelukt! Klaar om te publiceren.", 'success');
-                    }
-                }, 2000);
-
-            } catch (e) {
-                console.error("MQTT Publish Error:", e);
-                updateStatus(`Fout bij verzenden: ${e.message}`, 'error');
-            }
-        }
-
-        /**
-         * ***** NEW: Publishes an effect command to the MQTT topic *****
-         */
-        function publishEffect(payload, buttonText) {
-            if (!client || !client.isConnected()) {
-                updateStatus("Niet verbonden. Opnieuw verbinding maken...", 'error');
-                mqttConnect(); // Try to reconnect
-                return;
-            }
-
-            // Create the MQTT message
-            const message = new Paho.MQTT.Message(payload);
-            message.destinationName = topic;
-            message.qos = 0; 
-            message.retained = false; 
-
-            try {
-                client.send(message);
-                updateStatus(`Effect (${buttonText}) succesvol verzonden!`, 'success');
+                updateStatus(`Bericht (${payload}) succesvol verzonden!`, 'success');
                 console.log(`Published to ${topic}: ${payload}`);
 
-                // Briefly show success then revert status
+                // The message handler (onMessageArrived) will handle the UI update
+
                 setTimeout(() => {
                     if (statusBox.textContent.includes("succesvol verzonden")) {
                         updateStatus("Verbinding gelukt! Klaar om te publiceren.", 'success');
@@ -270,12 +316,12 @@
         
         // 1. Initialize the page when it loads
         window.onload = function() {
-            createEffectButtons(); // Create the buttons
-            mqttConnect();         // THEN connect to MQTT
+            createEffectButtons();
+            mqttConnect();
         };
 
-        // 2. Attach the publish function to the main color button
-        publishButton.addEventListener('click', publishColor);
+        // 2. Attach the combined publish function to the main button
+        publishButton.addEventListener('click', () => publishCombinedMessage(selectedEffect.number));
 
     </script>
 
