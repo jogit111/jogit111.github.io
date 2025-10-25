@@ -191,7 +191,7 @@
                 
                 button.disabled = true;
                 
-                // ***** MODIFIED: Only calls selectEffect (no publish here) *****
+                // Toggle logic on click: SELECT or UNSELECT (to Static)
                 button.addEventListener('click', function() {
                     const currentNum = parseInt(this.dataset.effectNumber);
                     const currentName = this.dataset.effectName;
@@ -211,6 +211,8 @@
 
         /**
          * Selects an effect and updates the UI for the *chosen* effect.
+         * @param {string} name - The name of the effect.
+         * @param {number} number - The number of the effect.
          */
         function selectEffect(name, number) {
             // 1. Update global object
@@ -220,16 +222,19 @@
             // 2. Update display
             selectedEffectDisplay.innerHTML = `Gekozen Effect: <strong>${name} (${number})</strong>`;
 
-            // 3. Update button styles (highlight only if NOT static)
+            // 3. ***** CORRECTED UI UPDATE LOGIC *****
             const allEffectButtons = document.querySelectorAll('.effect-button');
             allEffectButtons.forEach(btn => {
                 const btnNum = parseInt(btn.dataset.effectNumber);
+                
+                // Clear all selections first
                 btn.classList.remove('selected');
                 
-                // Only highlight the button if the selected effect is one of the buttons
+                // Highlight the button ONLY if the current selected effect matches the button's number
                 if (number === btnNum) {
                     btn.classList.add('selected');
                 }
+                // If number is 9 (Static), no button is highlighted, which is the desired toggle-off state.
             });
         }
         
@@ -333,7 +338,6 @@
             const message = new Paho.MQTT.Message(payload);
             message.destinationName = EFFECT_TOPIC;
             message.qos = 0;
-            // The effect topic should be retained so the lights know the state after reset
             message.retained = true; 
 
             try {
@@ -368,7 +372,6 @@
             const message = new Paho.MQTT.Message(payload);
             message.destinationName = COLOR_TOPIC;
             message.qos = 0;
-            // The color topic should be retained so the lights know the state after reset
             message.retained = true; 
 
             try {
@@ -396,15 +399,13 @@
             updateActiveStateDisplay(); // Show initial default state
         };
 
-        // 2. ***** MODIFIED: Main Publish Button sends both selected Effect and Color *****
+        // 2. Main Publish Button sends both selected Effect and Color
         publishButton.addEventListener('click', () => {
-            // This is the only place we call publishEffect and publishColor
             publishEffect(selectedEffect.number);
             publishColor();
         });
 
-        // 3. Optional: Publish color immediately when the color picker changes
-        // NOTE: We still allow the color to be sent immediately as it only affects one topic
+        // 3. Publish color immediately when the color picker changes
         colorPicker.addEventListener('change', publishColor);
 
     </script>
