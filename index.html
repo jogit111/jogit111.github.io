@@ -43,7 +43,7 @@
 
     <div class="w-full max-w-md bg-white p-6 md:p-8 rounded-2xl shadow-xl space-y-6">
         <h1 class="text-3xl font-bold text-center text-gray-800">Kleurkiezer voor Kerst</h1>
-        <p class="text-center text-gray-500 mb-2">Selecteer een kleur en een effect. Klik een effect opnieuw om deze uit te schakelen.</p>
+        <p class="text-center text-gray-500 mb-2">Selecteer een kleur en een effect. Druk op de knop om te verzenden.</p>
 
         <div id="activeStateDisplay" class="text-center text-sm p-3 rounded-xl font-medium bg-indigo-100 text-indigo-700 transition-all duration-500">
             Momenteel Actief: <strong>Wachten op data...</strong>
@@ -59,7 +59,7 @@
         </div>
 
         <div class="space-y-3 pt-2">
-            <label class="text-lg font-medium text-gray-700 text-center block">Speciale Effecten (direct verzenden):</label>
+            <label class="text-lg font-medium text-gray-700 text-center block">Speciale Effecten (klik om te selecteren):</label>
             <div id="effectButtonsContainer" class="grid grid-cols-5 gap-2 md:gap-3">
             </div>
         </div>
@@ -71,7 +71,7 @@
         <button id="publishButton" disabled
                 class="w-full py-4 text-lg font-semibold rounded-xl transition duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed
                        bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/50">
-            Verzend Geselecteerde Kleur & Effect
+            Verzend Geselecteerde Kleur & Effect!
         </button>
 
         <p class="text-xs text-center text-gray-400 pt-2">
@@ -100,10 +100,10 @@
             number: 9
         };
 
-        // Global object to track the selected effect's number and name. Defaults to Static.
+        // Global object to track the SELECTED effect (default is Static)
         let selectedEffect = STATIC_EFFECT; 
 
-        // Global state tracking for received data 
+        // Global state tracking for RECEIVED data
         let activeState = {
             effect: STATIC_EFFECT,
             color: "#0056D6"
@@ -112,7 +112,7 @@
         // Array mapping effect numbers back to names (for UI display)
         const effectButtonLabels = [
             "Sparkle", "Fade", "Chase", "Blink", "Wave",
-            "Cycle", "Strobe", "Twinkle", /* Static removed */ "Rainbow"
+            "Cycle", "Strobe", "Twinkle", "Rainbow"
         ];
         
         // --- DOM Elements ---
@@ -156,13 +156,11 @@
 
         /**
          * Looks up effect name by number.
-         * @param {number} num - The effect number (1-10).
-         * @returns {string} The effect name.
          */
         function getEffectName(num) {
             if (num >= 1 && num <= 8) {
                 return effectButtonLabels[num - 1];
-            } else if (num === 9) {
+            } else if (num === STATIC_EFFECT.number) {
                 return STATIC_EFFECT.name;
             } else if (num === 10) {
                 return "Rainbow";
@@ -193,7 +191,7 @@
                 
                 button.disabled = true;
                 
-                // ***** MODIFIED: Toggle logic on click *****
+                // ***** MODIFIED: Only calls selectEffect (no publish here) *****
                 button.addEventListener('click', function() {
                     const currentNum = parseInt(this.dataset.effectNumber);
                     const currentName = this.dataset.effectName;
@@ -201,11 +199,9 @@
                     if (selectedEffect.number === currentNum) {
                         // If already selected, UNSELECT it (revert to Static)
                         selectEffect(STATIC_EFFECT.name, STATIC_EFFECT.number);
-                        publishEffect(STATIC_EFFECT.number);
                     } else {
                         // If not selected, SELECT it
                         selectEffect(currentName, currentNum);
-                        publishEffect(currentNum);
                     }
                 });
                 
@@ -230,8 +226,8 @@
                 const btnNum = parseInt(btn.dataset.effectNumber);
                 btn.classList.remove('selected');
                 
+                // Only highlight the button if the selected effect is one of the buttons
                 if (number === btnNum) {
-                    // Only highlight if the selected effect is one of the buttons
                     btn.classList.add('selected');
                 }
             });
@@ -265,7 +261,6 @@
             client.subscribe(SUBSCRIBE_TOPIC, { qos: 0 });
             console.log(`Subscribed to topic: ${SUBSCRIBE_TOPIC}`);
             
-            // Ensure the correct default state is shown on connect
             selectEffect(selectedEffect.name, selectedEffect.number);
         }
 
@@ -289,7 +284,6 @@
         function onMessageArrived(message) {
             const payload = message.payloadString.trim();
             const topic = message.destinationName.toLowerCase();
-            console.log(`Message received on ${topic}: ${payload}`);
 
             if (topic === EFFECT_TOPIC.toLowerCase()) {
                 const effectNum = parseInt(payload);
@@ -328,7 +322,7 @@
         /**
          * Publishes the effect number to the effect topic.
          */
-        function publishEffect(effectNumberToPublish = selectedEffect.number) {
+        function publishEffect(effectNumberToPublish) {
             if (!client || !client.isConnected()) {
                 updateStatus("Niet verbonden. Opnieuw verbinding maken...", 'error');
                 mqttConnect();
@@ -339,12 +333,12 @@
             const message = new Paho.MQTT.Message(payload);
             message.destinationName = EFFECT_TOPIC;
             message.qos = 0;
-            message.retained = false; 
+            // The effect topic should be retained so the lights know the state after reset
+            message.retained = true; 
 
             try {
                 client.send(message);
                 updateStatus(`Effect (${payload}) succesvol verzonden!`, 'success');
-                console.log(`Published to ${EFFECT_TOPIC}: ${payload}`);
 
                 setTimeout(() => {
                     if (statusBox.textContent.includes("succesvol verzonden")) {
@@ -374,12 +368,12 @@
             const message = new Paho.MQTT.Message(payload);
             message.destinationName = COLOR_TOPIC;
             message.qos = 0;
-            message.retained = false; 
+            // The color topic should be retained so the lights know the state after reset
+            message.retained = true; 
 
             try {
                 client.send(message);
                 updateStatus(`Kleur (${payload}) succesvol verzonden!`, 'success');
-                console.log(`Published to ${COLOR_TOPIC}: ${payload}`);
 
                 setTimeout(() => {
                     if (statusBox.textContent.includes("succesvol verzonden")) {
@@ -402,14 +396,15 @@
             updateActiveStateDisplay(); // Show initial default state
         };
 
-        // 2. Attach the publish functions to the main button
+        // 2. ***** MODIFIED: Main Publish Button sends both selected Effect and Color *****
         publishButton.addEventListener('click', () => {
-            // Publishes the currently selected effect (which may be 9/Static) AND the color.
+            // This is the only place we call publishEffect and publishColor
             publishEffect(selectedEffect.number);
             publishColor();
         });
 
         // 3. Optional: Publish color immediately when the color picker changes
+        // NOTE: We still allow the color to be sent immediately as it only affects one topic
         colorPicker.addEventListener('change', publishColor);
 
     </script>
