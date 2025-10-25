@@ -75,7 +75,7 @@
         </button>
 
         <p class="text-xs text-center text-gray-400 pt-2">
-            Broker: test.mosquitto.org (poort 8081, WSS) | Topic: joriskerst
+            Broker: test.mosquitto.org (poort 8081, WSS) | Topics: joriskerst/effect & joriskerst/color
         </p>
     </div>
 
@@ -86,22 +86,30 @@
         const host = "test.mosquitto.org";
         const port = 8081;
         const path = ""; 
-        const topic = "joriskerst";
+        // ***** MODIFIED: Separate topics for control *****
+        const EFFECT_TOPIC = "joriskerst/effect";
+        const COLOR_TOPIC = "joriskerst/color";
+        // ***** NEW: Wildcard topic for subscribing to both updates *****
+        const SUBSCRIBE_TOPIC = "joriskerst/#"; 
         
         // Generate a unique client ID
         const clientId = "web_color_picker_" + Math.random().toString(16).substr(2, 8);
         
         let client;
         
-        // ***** MODIFIED: Global object to track the selected effect's number and name *****
-        // Default is Static (9), but we don't need to select a button.
+        // Global object to track the selected effect's number and name
         let selectedEffect = {
             name: "Static", 
             number: 9
         }; 
 
-        // ***** MODIFIED: Removed 'Static' from the button list *****
-        // Static (9) is handled by the main publish button.
+        // ***** NEW: Global state tracking for received data *****
+        let activeState = {
+            effect: { name: "Static", number: 9 },
+            color: "#0056D6"
+        };
+
+        // Array mapping effect numbers back to names (for UI display)
         const effectButtonLabels = [
             "Sparkle", "Fade", "Chase", "Blink", "Wave",
             "Cycle", "Strobe", "Twinkle", /* Static removed */ "Rainbow"
@@ -145,17 +153,30 @@
                     break;
             }
         }
+
+        /**
+         * Looks up effect name by number.
+         * @param {number} num - The effect number (1-10).
+         * @returns {string} The effect name.
+         */
+        function getEffectName(num) {
+            if (num >= 1 && num <= 8) {
+                return effectButtonLabels[num - 1];
+            } else if (num === 9) {
+                return "Static";
+            } else if (num === 10) {
+                return "Rainbow";
+            }
+            return "Onbekend";
+        }
         
         /**
          * Creates the effect buttons dynamically.
          */
         function createEffectButtons() {
             effectButtonLabels.forEach((label, index) => {
-                // The effects are now 1-8 and 10, skipping 9 (Static)
                 let effectNumber = index + 1;
                 
-                // If we reach the index for 'Rainbow' (originally index 9, now index 8), assign 10.
-                // The 'Static' button was at index 8 (number 9).
                 if (label === "Rainbow") {
                     effectNumber = 10;
                 }
@@ -164,9 +185,8 @@
                 button.type = 'button';
                 button.textContent = `${label} (${effectNumber})`;
                 button.dataset.effectName = label;
-                button.dataset.effectNumber = effectNumber; // Store the actual number
+                button.dataset.effectNumber = effectNumber;
 
-                // No button is initially 'selected' (Static 9 is the default)
                 button.className = `effect-button py-2 px-1 text-xs md:text-sm font-medium rounded-lg transition-all 
                                      bg-gray-100 text-gray-700 hover:bg-gray-200 
                                      disabled:opacity-50 disabled:cursor-not-allowed`;
@@ -175,7 +195,8 @@
                 
                 button.addEventListener('click', () => {
                     selectEffect(label, effectNumber);
-                    publishCombinedMessage(effectNumber);
+                    // ***** MODIFIED: Publish effect only *****
+                    publishEffect(effectNumber); 
                 });
                 
                 effectButtonsContainer.appendChild(button);
@@ -184,17 +205,12 @@
 
         /**
          * Selects an effect and updates the UI for the *chosen* effect.
-         * Note: This function is now only called by the effect buttons, not the main button.
          */
         function selectEffect(name, number) {
-            // 1. Update global object
             selectedEffect.name = name;
             selectedEffect.number = number;
-
-            // 2. Update display
             selectedEffectDisplay.innerHTML = `Gekozen Effect: <strong>${name} (${number})</strong>`;
 
-            // 3. Update button styles (Clear previous selection and set new one)
             const allEffectButtons = document.querySelectorAll('.effect-button');
             allEffectButtons.forEach(btn => {
                 btn.classList.remove('selected');
@@ -203,8 +219,8 @@
                 }
             });
         }
-        
-        // --- MQTT Functions (connection functions remain the same) ---
+
+        // --- MQTT Functions ---
         
         function mqttConnect() {
             try {
@@ -227,13 +243,11 @@
 
         function onConnect() {
             console.log("MQTT Connected");
-            updateStatus("Verbinding gelukt! Klaar om te publiceren. Abonneren op topic...", 'success');
+            updateStatus("Verbinding gelukt! Klaar om te publiceren. Abonneren op updates...", 'success');
             
-            // Subscribe to the topic when connected
-            client.subscribe(topic, { qos: 0 });
-            console.log(`Subscribed to topic: ${topic}`);
-            
-            // No need to call selectEffect here, as Static 9 is the default
+            // ***** MODIFIED: Subscribe to the wildcard topic for both updates *****
+            client.subscribe(SUBSCRIBE_TOPIC, { qos: 0 });
+            console.log(`Subscribed to topic: ${SUBSCRIBE_TOPIC}`);
         }
 
         function onFailure(responseObject) {
@@ -251,68 +265,104 @@
         }
 
         /**
-         * Handles incoming MQTT messages and updates the active display
+         * ***** MODIFIED: Handles incoming MQTT messages and updates the active display *****
          */
         function onMessageArrived(message) {
-            const payload = message.payloadString;
-            console.log(`Message received on ${message.destinationName}: ${payload}`);
+            const payload = message.payloadString.trim();
+            const topic = message.destinationName.toLowerCase();
+            console.log(`Message received on ${topic}: ${payload}`);
 
-            if (payload && payload.includes(',')) {
-                const parts = payload.split(',');
-                const effectNum = parseInt(parts[0].trim());
-                const hexColor = parts[1].trim();
-                
-                // Manually map number 9 back to the name 'Static'
-                let effectName;
-                if (effectNum >= 1 && effectNum <= 8) {
-                    effectName = effectButtonLabels[effectNum - 1];
-                } else if (effectNum === 9) {
-                    effectName = "Static";
-                } else if (effectNum === 10) {
-                    effectName = "Rainbow"; // Index 8 in the new array
-                } else {
-                    effectName = "Onbekend";
+            if (topic === EFFECT_TOPIC.toLowerCase()) {
+                const effectNum = parseInt(payload);
+                if (!isNaN(effectNum)) {
+                    activeState.effect.number = effectNum;
+                    activeState.effect.name = getEffectName(effectNum);
                 }
-
-                // Update the active state display box
-                activeStateDisplay.innerHTML = `
-                    Momenteel Actief: 
-                    <strong style="color: ${hexColor};">
-                        ${effectName} (${effectNum})
-                    </strong>
-                    met kleur 
-                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${hexColor}; border: 1px solid #ccc;"></span>
-                    ${hexColor}
-                `;
-            } else {
-                console.warn("Received message not in 'Number,#RRGGBB' format:", payload);
-                activeStateDisplay.innerHTML = 'Momenteel Actief: <strong>Ongeldige data ontvangen</strong>';
+            } else if (topic === COLOR_TOPIC.toLowerCase()) {
+                // Should be a hex color like #RRGGBB
+                if (payload.startsWith('#') && payload.length === 7) {
+                    activeState.color = payload;
+                }
             }
+            
+            // Always update the display after receiving any relevant part of the state
+            updateActiveStateDisplay();
         }
-        
+
         /**
-         * Publishes the combined 'EffectNumber,#RRGGBB' message.
+         * Updates the active state display using the globally tracked activeState object.
          */
-        function publishCombinedMessage(effectNumberToPublish = selectedEffect.number) {
+        function updateActiveStateDisplay() {
+            const name = activeState.effect.name;
+            const num = activeState.effect.number;
+            const color = activeState.color;
+
+            activeStateDisplay.innerHTML = `
+                Momenteel Actief: 
+                <strong style="color: ${color};">
+                    ${name} (${num})
+                </strong>
+                met kleur 
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${color}; border: 1px solid #ccc;"></span>
+                ${color}
+            `;
+        }
+
+        /**
+         * ***** NEW: Publishes the effect number to the effect topic. *****
+         */
+        function publishEffect(effectNumberToPublish = selectedEffect.number) {
             if (!client || !client.isConnected()) {
                 updateStatus("Niet verbonden. Opnieuw verbinding maken...", 'error');
                 mqttConnect();
                 return;
             }
 
-            const hexValue = colorPicker.value.toUpperCase(); 
-            // Create the combined payload: "EffectNumber,#RRGGBB"
-            const payload = `${effectNumberToPublish},${hexValue}`;
-
+            const payload = effectNumberToPublish.toString();
             const message = new Paho.MQTT.Message(payload);
-            message.destinationName = topic;
+            message.destinationName = EFFECT_TOPIC;
             message.qos = 0;
             message.retained = false; 
 
             try {
                 client.send(message);
-                updateStatus(`Bericht (${payload}) succesvol verzonden!`, 'success');
-                console.log(`Published to ${topic}: ${payload}`);
+                updateStatus(`Effect (${payload}) succesvol verzonden!`, 'success');
+                console.log(`Published to ${EFFECT_TOPIC}: ${payload}`);
+
+                setTimeout(() => {
+                    if (statusBox.textContent.includes("succesvol verzonden")) {
+                        updateStatus("Verbinding gelukt! Klaar om te publiceren.", 'success');
+                    }
+                }, 2000);
+
+            } catch (e) {
+                console.error("MQTT Publish Error:", e);
+                updateStatus(`Fout bij verzenden: ${e.message}`, 'error');
+            }
+        }
+
+        /**
+         * ***** NEW: Publishes the color hex value to the color topic. *****
+         */
+        function publishColor() {
+             if (!client || !client.isConnected()) {
+                updateStatus("Niet verbonden. Opnieuw verbinding maken...", 'error');
+                mqttConnect();
+                return;
+            }
+
+            const hexValue = colorPicker.value.toUpperCase(); 
+            const payload = hexValue;
+
+            const message = new Paho.MQTT.Message(payload);
+            message.destinationName = COLOR_TOPIC;
+            message.qos = 0;
+            message.retained = false; 
+
+            try {
+                client.send(message);
+                updateStatus(`Kleur (${payload}) succesvol verzonden!`, 'success');
+                console.log(`Published to ${COLOR_TOPIC}: ${payload}`);
 
                 setTimeout(() => {
                     if (statusBox.textContent.includes("succesvol verzonden")) {
@@ -332,11 +382,21 @@
         window.onload = function() {
             createEffectButtons();
             mqttConnect();
+            updateActiveStateDisplay(); // Show initial default state
         };
 
         // 2. Attach the combined publish function to the main button
-        // When the main button is pressed, it uses the globally stored selectedEffect.number (default 9)
-        publishButton.addEventListener('click', () => publishCombinedMessage(selectedEffect.number));
+        publishButton.addEventListener('click', () => {
+            // When the main button is pressed, it publishes the default static effect AND the color.
+            publishEffect(selectedEffect.number);
+            publishColor();
+        });
+
+        // 3. Optional: Publish color immediately when the color picker changes
+        colorPicker.addEventListener('change', () => {
+             // This keeps the color up-to-date on the lights
+             publishColor(); 
+        });
 
     </script>
 
